@@ -8,6 +8,8 @@ kthread_t *curthr;
  * subsystem needs ot be initialized?
  */
 void kthread_init() {
+    slab_allocator_init(&kthread_allocator, sizeof(kthread_t));
+    curthr = NULL;
 
 }
 
