@@ -11,11 +11,12 @@ void proc_init() {
     
     list_init(&proc_list);
     spinlock_init(&proc_list_lock);
+
     next_pid = 1;
     proc_initproc = NULL;
-    slab_allocator_init(&proc_allocator, sizeof(proc_t))
+    slab_allocator_init(&proc_allocator, sizeof(proc_t));
+
     curproc = NULL;
-    curproc->p_state = PROC_PENDING;
 
 }
 
@@ -29,15 +30,27 @@ void proc_init() {
  *   - what is the initial value of curproc? curthr? 
  */
 void proc_idleproc_init() {
-    idleproc->p_pproc == NULL;
-    list_init(&idleproc->p_threads);
-    list_init(&idleproc->p_children);
-    list_link_init(&idleproc->p_threads_lock);
-    list_link_init(&idleproc->p_children_lock);
-    spinlock_init(&proc_list_lock);
-    spinlock_init(&proc_list_lock);
-    idleproc->p_state = PROC_RUNNING;
-    // COME BACK LATER, SEE IF THERE IS ANYTHING LEFT TO INITIALIZE
+    idleproc.p_pid = 0;
+    idleproc.p_pproc = NULL;
+    idleproc.p_status = 0;
+    idleproc.p_state = PROC_RUNNING;
+
+    // trying to set pname char "idle"
+    const char *idle_name = "idle";
+    int i = 0;
+    while (idle_name[i] != "\0" && i < MAX_STRING_LEN - 1) {
+        idleproc.p_name[i] = idle_name[i];
+        i++;
+    }
+    idleproc.p_name[i] = "\0";
+
+    // initialize threads and children lists
+    list_init(&idleproc.p_threads);
+    list_init(&idleproc.p_children);
+
+    // initialize the threads and children spinlocks
+    spinlock_init(&idleproc.p_threads_lock);
+    spinlock_init(&idleproc.p_children_lock);
 }
 
 /*
@@ -56,40 +69,46 @@ void initproc_finish() {
  *   - don't forget to synchronize on shared structures!
  */
 proc_t *proc_create(const char *name) {
+
+
+    proc_t *new_proc = slab_obj_alloc(proc_allocator);
     
-    // making space for new process
-    proc_t * new_process_pointer = slab_obj_alloc(proc_allocator);
+    new_proc->p_pid = next_pid++;
+    new_proc->p_pproc = curproc ? curproc : idleproc; // if there is no curproc, then set parent to be idleproc
+    new_proc->p_status = 0;
+    new_proc->p_state = PROC_PENDING; // yet to run new process
 
-    // new pid = pid of current process + 1, NEED TO SEE IF WE NEED TO UPDATE MORE GLOBALS
+    // set p_name to name
+    int i = 0;
+    while (name[i] != "\0" && i < MAX_STRING_LEN - 1) {
+        curproc->p_name[i] = name[i];
+        i++;
+    }
+    curproc->p_name[i] = "\0";
+
+    // initialize lists and spinlocks
+    list_init(&new_proc->p_threads);
+    list_init(&new_proc->p_children);
+    spinlock_init(&new_proc->p_threads_lock);
+    spinlock_init(&new_proc->p_children_lock);
+
+    // attaches links to process object, so we are able to trace back to this new process
+    list_link_init(&new_proc->p_list_link, new_proc);
+    list_link_init(&new_proc->p_child_link, new_proc);
+
+    // sync + add process to global process list
     spinlock_lock(&proc_list_lock);
-    next_pid = curproc->pid+1;
-
-    // adds new process to proc list
-    list_link_init(&new_process.p_list_link);
-    list_insert(&proc_list, new_process.p_list_link);
-
+    list_insert(&proc_list, &new_proc->p_list_link);
     spinlock_unlock(&proc_list_lock);
 
+    // if there is a current process, that is the parent, so make the new process a child of that parent
+    if (curproc) {
+        spinlock_lock(&curproc->p_children_lock);
+        list_insert(&curproc->p_children, &new_proc->p_child_link)
+        spinlock_unlock(&curproc->p_children_lock);
+    }
 
-    // create a new process
-    proc_t new_process;
-    *new_process_pointer = new_process;
-
-    // add this new process as child to parent curproc
-    spinlock_lock(&p_children_lock);
-
-    list_link_init(&curproc->p_child_link);
-    list_insert(&curproc->p_children, curproc->p_child_link);
-
-    list_link_init(&curproc->p_child_link.next);
-    curproc->p_child_link.next = new_process_pointer;
-    list_insert(&curproc->p_children, curproc->p_child_link);
-    spinlock_unlock(&p_children_lock);
-
-    // process state
-    new_process->p_state = PROC_PENDING;
-
-    return new_process;
+    return new_proc;
 }
 
 /*
@@ -99,24 +118,26 @@ proc_t *proc_create(const char *name) {
  */
 void proc_destroy(proc_t *proc) {
 
-    // other attributes
+    // remove the proc's list and child links from their respective lists
+    spinlock_lock(&proc_list_lock);
+    list_remove_link(&proc_list, &proc->p_list_link);
+    spinlock_unlock(&proc_list_lock);
 
-    // Right now, figuring out what to deallocate, how to ensure that child processes are not still
-    // in the heap
-
-
-    // remove elements from the proc_list by unlinking them individually
-    for (list_link_t *link = list_remove_front (& proc_list);
-        link != NULL; link = list_remove_front (& proc_list)) {
-        // if we want to access the parent
-        proc_t *parent = (proc_t *) link ->p_pproc;
-
-
+    if (proc->p_pproc) {
+        spinlock_lock(&proc->p_pproc->p_children_lock);
+        list_remove_link(&proc->p_pproc->p_children, &proc->p_child_link);
+        spinlock_unlock(&proc->p_pproc->p_children_lock);
     }
 
+    // destroy the proc's threads
+    for (list_link_t *link = list_remove_front(&proc->p_threads); link != NULL; link = list_remove_front(&proc->p_threads)) {
+        kthread_t *thr = (kthread_t *) link->parent;
+        kthread_destroy(thr);
+    }
 
+    // free the process object
+    slab_obj_free(proc_allocator, proc);
 
-    // NEED TO FIGURE HOW TO DEALLOCATE SPACE IN HEAP FOR THE DESTROYED PROC
 }
 
 /*
