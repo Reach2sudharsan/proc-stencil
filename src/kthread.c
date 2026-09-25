@@ -8,9 +8,9 @@ kthread_t *curthr;
  * subsystem needs ot be initialized?
  */
 void kthread_init() {
+    //Initalize kthread_allocator
     slab_allocator_init(&kthread_allocator, sizeof(kthread_t));
     curthr = NULL;
-
 }
 
 
@@ -28,7 +28,36 @@ void kthread_init() {
  */
 kthread_t *kthread_create(proc_t *proc, kthread_func_t func, long arg1,
                           void *arg2) {
-    return NULL;
+    //Allocate new thread and return NULL if unsucessful
+    kthread_t* new_thread = (kthread_t*) slab_obj_alloc(kthread_allocator);
+    if(new_thread == NULL){
+        return NULL;
+    }
+
+    //Allocate the stack
+    new_thread->kt_kstack = (char*) page_alloc_n(DEFAULT_STACK_SIZE_PAGES);
+
+    //Prepare the thread's context
+    context_setup(&(new_thread->kt_ctx), func, arg1, arg2, &(new_thread->kt_kstack), DEFAULT_STACK_SIZE_PAGES * PAGE_SIZE , NULL);
+
+    //Set its parent processor, state
+    new_thread->kt_proc = proc;
+    new_thread->kt_state = KT_RUNNABLE;
+    (new_thread->kt_cancelled) = 0; 
+
+    //Add the thread to the proc's p_thread list
+    list_link_init(&(new_thread->kt_plink), &new_thread);
+    list_insert(&(proc->p_threads), &(new_thread->kt_plink));
+
+    //Prepare its run_queue link
+    list_link_init(&(new_thread->kt_qlink), &new_thread);
+
+    spinlock_init(&new_thread->kt_lock);
+
+    new_thread->kt_retval = 0;
+    new_thread->kt_errno = 0;
+
+    return new_thread;
 }
 
 /*
@@ -43,6 +72,38 @@ kthread_t *kthread_create(proc_t *proc, kthread_func_t func, long arg1,
  *   - see kthread_create for more hints!
  */
 kthread_t *kthread_clone(kthread_t *thread) {
+
+    //Allocate clone thread and return NULL if unsucessful
+    kthread_t* clone_thread = (kthread_t*) slab_obj_alloc(kthread_allocator);
+    if(clone_thread == NULL){
+        return NULL;
+    }
+    //Copy original thread's context into clone thread
+    //But change the stack to the clone's stack
+    clone_thread->kt_kstack = (char*) page_alloc_n(DEFAULT_STACK_SIZE_PAGES);
+    clone_thread->kt_ctx = thread->kt_ctx;
+    (clone_thread->kt_ctx).c_kstack = clone_thread->kt_kstack;
+    (clone_thread->kt_ctx).c_kstacksz = DEFAULT_STACK_SIZE_PAGES * PAGE_SIZE;
+
+    //Copy other fields from thread
+    (clone_thread->kt_proc) = thread->kt_proc;
+
+    (clone_thread->kt_state) = KT_RUNNABLE; 
+
+    (clone_thread->kt_cancelled) = 0; 
+
+    //Add the thread to the proc's p_thread list
+    list_link_init(&(clone_thread->kt_plink), &clone_thread);
+    list_insert(&((clone_thread->kt_proc)->p_threads), &(clone_thread->kt_plink));
+
+    list_link_init(&(clone_thread->kt_qlink), &clone_thread);
+
+    spinlock_init(&clone_thread->kt_lock);
+
+    clone_thread->kt_retval = thread->kt_retval;
+    clone_thread->kt_errno = thread->kt_errno;
+
+
     return NULL;
 }
 
@@ -55,7 +116,18 @@ kthread_t *kthread_clone(kthread_t *thread) {
  *   - don't forget to free thread's stack!
  */
 void kthread_destroy(kthread_t *thread) {
+    //No need to have concurrency safety
+    //remove thread from process' thread list
+    if(thread == NULL){
+        return;
+    }
+    list_remove_link(&((thread->kt_proc)->p_threads), &(thread->kt_plink)); 
 
+    //free stack
+    slab_obj_free(kthread_allocator, &(thread->kt_kstack));
+
+    //deallocate thread memory
+    slab_obj_free(kthread_allocator, &thread);
 }
 
 /*
@@ -66,7 +138,18 @@ void kthread_destroy(kthread_t *thread) {
  *   - remember to the protect access to the thread
  */
 void kthread_cancel(kthread_t *thread, void *retval) {
+    //same as exit but for some thread other than current thread
+    if(thread == NULL){
+        return;
+    }
+    
+    //Set retval, cancelled and state
+    thread->kt_retval = retval;
+    thread->kt_cancelled = 1;
+    thread->kt_state = KT_NO_STATE;
 
+    //Notify parent process
+    proc_thread_exiting(retval);
 }
 
 /*
@@ -75,5 +158,16 @@ void kthread_cancel(kthread_t *thread, void *retval) {
  * parent process to manage its threads!
  */
 void kthread_exit(void *retval) {
+    //set ret,change thread state, call thread_finish(min remove thread from list)
+    if(curthr == NULL){
+        return;
+    }
 
+    //Set retval, cancelled and state
+    curthr->kt_retval = retval;
+    curthr->kt_cancelled = 1;
+    curthr->kt_state = KT_EXITED;
+
+    //Notify parent process
+    proc_thread_exiting(retval);
 }
