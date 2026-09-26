@@ -155,7 +155,7 @@ void proc_cleanup() {
     spinlock_lock(&curproc->p_children_lock);
     for (list_link_t *link = list_remove_front(&curproc->p_children); link != NULL; link = list_remove_front(&curproc->p_children)) {
         proc_t *child = (proc_t *) link->parent;
-        child->p_pproc = curproc;
+        // child->p_pproc = curproc;
 
         spinlock_lock(&proc_initproc->p_children_lock);
         list_insert(&proc_initproc->p_children, &child->p_child_link);
@@ -176,29 +176,18 @@ void proc_cleanup() {
  */
 void proc_thread_exiting(void *retval) {
 
-    // check the other threads to see if any are still running
-    int still_running = 0;
-
+    // Assuming curthr exists but its resources just needs to be deallocated
     spinlock_lock(&curproc->p_threads_lock);
-    for (list_link_t *link = curproc->p_threads.head; link != NULL; link = link->next) {
-        kthread_t *thr = (kthread_t *) link->parent;
-
-        if (thr != curthr && thr->kt_state != KT_EXITED && thr->kt_state != KT_NO_STATE) {
-            still_running = 1;
-            break;
-        }
-    }
+    list_remove_link(&curproc->p_threads, &curthr);
     spinlock_unlock(&curproc->p_threads_lock);
 
-    // if every thread is done, the process is done too
-    if (!still_running) {
+    // if there are no more threads for the process, terminate the process, else go to the next thread
+    if (curproc->p_threads.head == NULL) {
         curproc->p_status = (long) retval;
         proc_cleanup();
+    } else {
+        sched_switch();
     }
-
-    // this thread is finished, switch to another one
-    sched_switch();
-
 }
 
 /*
@@ -214,7 +203,7 @@ void proc_kill(proc_t *proc, long status) {
 
     // cancel every thread in the process except the current one
     spinlock_lock(&curproc->p_threads_lock);
-    for (list_link_t *link = proc->p_threads.head; link != NULL; link = link->next) {
+    for (list_link_t *link = list_remove_front(&proc->p_threads); link != NULL; link = list_remove_front(&proc->p_threads)) {
         kthread_t *thr = (kthread_t *) link->parent;
 
         // cant cancel ourselves, we exit at the end instead
@@ -241,5 +230,33 @@ void proc_kill(proc_t *proc, long status) {
  * finishes!
  */
 void proc_kill_all() {
+    spinlock_lock(&proc_list_lock);
 
+    // Remove processes that aren't the idle proc or any of its children, while still maintaining the links to proc_list
+    // (without removing links from the proc_list)
+    int is_curproc_or_idle_or_its_child = 0;
+    for (list_link_t* link = proc_list.head; link != NULL, link = link.next) {
+        proc_t *proc = (proc_t *) link->parent;
+
+        if (proc == &idle_proc || proc == curproc) {
+            is_curproc_or_idle_or_its_child = 1;
+        } else {
+
+            for (list_link_t* idle_link = idle_proc.p_children.head; idle_link != NULL, idle_link = idle_link.next) {
+                proc_t *idle_proc_child = (proc_t *) idle_link->parent;
+                if (link == idle_link) {
+                    is_curproc_or_idle_or_its_child = 1;
+                    break;
+                }
+
+            }
+        }
+
+        if (!is_curproc_or_idle_or_its_child) {
+            proc_kill(proc, 0);
+        }
+    }
+
+    proc_kill(curproc, 0);
+    spinlock_unlock(&proc_list_lock);
 }
