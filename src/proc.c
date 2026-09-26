@@ -147,6 +147,27 @@ void proc_destroy(proc_t *proc) {
  */
 void proc_cleanup() {
 
+    // process is finished, but do not free it
+    // the parent still needs to see that it exited
+    curproc->p_state = PROC_DEAD;
+
+    // give the children to init so they still have a parent
+    spinlock_lock(&curproc->p_children_lock);
+    for (list_link_t *link = list_remove_front(&curproc->p_children); link != NULL; link = list_remove_front(&curproc->p_children)) {
+        proc_t *child = (proc_t *) link->parent;
+        child->p_pproc = curproc;
+
+        spinlock_lock(&proc_initproc->p_children_lock);
+        list_insert(&proc_initproc->p_children, &child->p_child_link);
+        spinlock_unlock(&proc_initproc->p_children_lock);
+    }
+    spinlock_unlock(&curproc->p_children_lock);
+
+    // init finishing means the whole system is done
+    if (curproc == proc_initproc) {
+        initproc_finish();
+    }
+
 }
 
 /*
@@ -154,6 +175,29 @@ void proc_cleanup() {
  * Hints: how should a process behave if all threads exit?
  */
 void proc_thread_exiting(void *retval) {
+
+    // check the other threads to see if any are still running
+    int still_running = 0;
+
+    spinlock_lock(&curproc->p_threads_lock);
+    for (list_link_t *link = curproc->p_threads.head; link != NULL; link = link->next) {
+        kthread_t *thr = (kthread_t *) link->parent;
+
+        if (thr != curthr && thr->kt_state != KT_EXITED && thr->kt_state != KT_NO_STATE) {
+            still_running = 1;
+            break;
+        }
+    }
+    spinlock_unlock(&curproc->p_threads_lock);
+
+    // if every thread is done, the process is done too
+    if (!still_running) {
+        curproc->p_status = (long) retval;
+        proc_cleanup();
+    }
+
+    // this thread is finished, switch to another one
+    sched_switch();
 
 }
 
@@ -164,6 +208,28 @@ void proc_thread_exiting(void *retval) {
  *   - protect access to the threads list
  */
 void proc_kill(proc_t *proc, long status) {
+
+    // save the status the process is being killed with
+    proc->p_status = status;
+
+    // cancel every thread in the process except the current one
+    spinlock_lock(&curproc->p_threads_lock);
+    for (list_link_t *link = proc->p_threads.head; link != NULL; link = link->next) {
+        kthread_t *thr = (kthread_t *) link->parent;
+
+        // cant cancel ourselves, we exit at the end instead
+        if (thr != curthr) {
+            kthread_cancel(thr, (void *) status);
+        }
+    }
+    spinlock_unlock(&curproc->p_threads_lock);
+
+    // if we are killing our own process, the current thread has to exit too
+    if (proc == curproc) {
+        kthread_exit((void *) status);
+    } else {
+        proc->p_state = PROC_DEAD;
+    }
 
 }
 
