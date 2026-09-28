@@ -69,22 +69,20 @@ void initproc_finish() {
  *   - don't forget to synchronize on shared structures!
  */
 proc_t *proc_create(const char *name) {
-
-
     proc_t *new_proc = slab_obj_alloc(proc_allocator);
     
     new_proc->p_pid = next_pid++;
-    new_proc->p_pproc = curproc ? curproc : idleproc; // if there is no curproc, then set parent to be idleproc
+    new_proc->p_pproc = curproc ? curproc : &idleproc; // if there is no curproc, then set parent to be idleproc
     new_proc->p_status = 0;
     new_proc->p_state = PROC_PENDING; // yet to run new process
 
     // set p_name to name
     int i = 0;
-    while (name[i] != "\0" && i < MAX_STRING_LEN - 1) {
-        curproc->p_name[i] = name[i];
+    while (name != NULL && name[i] != '\0' && i < MAX_STRING_LEN - 1) {
+        new_proc->p_name[i] = name[i];
         i++;
     }
-    curproc->p_name[i] = "\0";
+    new_proc->p_name[i] = '\0';
 
     // initialize lists and spinlocks
     list_init(&new_proc->p_threads);
@@ -98,15 +96,13 @@ proc_t *proc_create(const char *name) {
 
     // sync + add process to global process list
     spinlock_lock(&proc_list_lock);
+    new_proc->p_pid = next_pid++;
     list_insert(&proc_list, &new_proc->p_list_link);
     spinlock_unlock(&proc_list_lock);
 
-    // if there is a current process, that is the parent, so make the new process a child of that parent
-    if (curproc) {
-        spinlock_lock(&curproc->p_children_lock);
-        list_insert(&curproc->p_children, &new_proc->p_child_link)
-        spinlock_unlock(&curproc->p_children_lock);
-    }
+    spinlock_lock(&new_proc->p_pproc->p_children_lock);
+    list_insert(&new_proc->p_pproc->p_children, &new_proc->p_child_link);
+    spinlock_unlock(&new_proc->p_pproc->p_children_lock);
 
     return new_proc;
 }

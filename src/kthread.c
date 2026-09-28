@@ -28,34 +28,43 @@ void kthread_init() {
  */
 kthread_t *kthread_create(proc_t *proc, kthread_func_t func, long arg1,
                           void *arg2) {
-    //Allocate new thread and return NULL if unsucessful
-    kthread_t* new_thread = (kthread_t*) slab_obj_alloc(kthread_allocator);
-    if(new_thread == NULL){
+    if (proc == NULL || func == NULL) {
         return NULL;
     }
 
-    //Allocate the stack
-    new_thread->kt_kstack = (char*) page_alloc_n(DEFAULT_STACK_SIZE_PAGES);
+    kthread_t *new_thread = slab_obj_alloc(kthread_allocator);
+    if (new_thread == NULL) {
+        return NULL;
+    }
 
-    //Prepare the thread's context
-    context_setup(&(new_thread->kt_ctx), func, arg1, arg2, &(new_thread->kt_kstack), DEFAULT_STACK_SIZE_PAGES * PAGE_SIZE , NULL);
+    // allocate stack
+    new_thread->kt_kstack = page_alloc_n(DEFAULT_STACK_SIZE_PAGES);
+    if (new_thread->kt_kstack == NULL) {
+        slab_obj_free(kthread_allocator, new_thread);
+        return NULL;
+    }
 
-    //Set its parent processor, state
+    // set thread's context
+    context_setup(&new_thread->kt_ctx, func, arg1, arg2,
+                  new_thread->kt_kstack,
+                  DEFAULT_STACK_SIZE_PAGES * PAGE_SIZE, NULL);
+
+    // set the thread's owner and initial state
     new_thread->kt_proc = proc;
     new_thread->kt_state = KT_RUNNABLE;
-    (new_thread->kt_cancelled) = 0; 
-
-    //Add the thread to the proc's p_thread list
-    list_link_init(&(new_thread->kt_plink), &new_thread);
-    list_insert(&(proc->p_threads), &(new_thread->kt_plink));
-
-    //Prepare its run_queue link
-    list_link_init(&(new_thread->kt_qlink), &new_thread);
-
+    new_thread->kt_cancelled = 0;
+    new_thread->kt_retval = NULL;
+    new_thread->kt_errno = 0;
     spinlock_init(&new_thread->kt_lock);
 
-    new_thread->kt_retval = 0;
-    new_thread->kt_errno = 0;
+    // initialize links for the process list and scheduler queue
+    list_link_init(&new_thread->kt_plink, new_thread);
+    list_link_init(&new_thread->kt_qlink, new_thread);
+
+    // add the thread to the process list while holding its lock
+    spinlock_lock(&proc->p_threads_lock);
+    list_insert(&proc->p_threads, &new_thread->kt_plink);
+    spinlock_unlock(&proc->p_threads_lock);
 
     return new_thread;
 }

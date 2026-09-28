@@ -21,7 +21,31 @@ static void *childproc_run(long arg1, void *arg2) {
 }
 
 static void *initproc_run(long arg1, void *arg2) {
-    return NULL;
+
+    // create child process
+    proc_t* child = proc_create("child");
+    if (child == NULL) {
+        return NULL;
+    }
+
+    // create thread for child preocess
+    kthread_t *child_thread = kthread_create(child, childproc_run, 0, NULL);
+    if (child_thread == NULL) {
+        return NULL
+    }
+
+    // set the thread's state + insert thread to run queue
+    curthr->kt_state = KT_ON_CPU;
+    spinlock_lock(&kt_runq.tq_lock);
+    list_insert_back(&kt_runq.tq_list, &child_thread->kt_qlink);
+    spinlock_unlock(&kt_runq.tq_lock);
+
+    // resume here after the child exits and switches back
+    sched_switch();
+
+    long status = child->p_status; // child process should be PROC_DEAD
+    proc_destroy(child); // should no longer be running
+    return (void *) status;
 }
 
 void *start_initproc(long arg1, void *arg2) {
