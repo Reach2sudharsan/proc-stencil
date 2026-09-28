@@ -2,6 +2,9 @@
 #include "proc.h"
 #include "sched.h"
 
+#include <stdio.h>
+#include <assert.h>
+
 const int NUM_INITS = 6;
 
 typedef void (*init_func_t)();
@@ -27,11 +30,10 @@ static void *initproc_run(long arg1, void *arg2) {
     if (child == NULL) {
         return NULL;
     }
-
     // create thread for child preocess
     kthread_t *child_thread = kthread_create(child, childproc_run, 0, NULL);
     if (child_thread == NULL) {
-        return NULL
+        return NULL;
     }
 
     // set the thread's state + insert thread to run queue
@@ -76,6 +78,9 @@ int main(int argc, char **argv) {
     context_switch(&bios_ctx, &bootstrap_ctx); // saves this as the place where bios ctx will restore
 
     // TODO: what do you expect when you get here? Add test cases here!
+    assert(curproc == proc_initproc);
+    printf("ALL is fine so far...\n");
+
 
     return 0;
 }

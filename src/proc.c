@@ -38,11 +38,11 @@ void proc_idleproc_init() {
     // trying to set pname char "idle"
     const char *idle_name = "idle";
     int i = 0;
-    while (idle_name[i] != "\0" && i < MAX_STRING_LEN - 1) {
+    while (idle_name[i] != '\0' && i < MAX_STRING_LEN - 1) {
         idleproc.p_name[i] = idle_name[i];
         i++;
     }
-    idleproc.p_name[i] = "\0";
+    idleproc.p_name[i] = '\0';
 
     // initialize threads and children lists
     list_init(&idleproc.p_threads);
@@ -174,11 +174,11 @@ void proc_thread_exiting(void *retval) {
 
     // Assuming curthr exists but its resources just needs to be deallocated
     spinlock_lock(&curproc->p_threads_lock);
-    list_remove_link(&curproc->p_threads, &curthr);
+    list_remove_link(&curproc->p_threads, &curthr->kt_plink);
     spinlock_unlock(&curproc->p_threads_lock);
 
     // if there are no more threads for the process, terminate the process, else go to the next thread
-    if (curproc->p_threads.head == NULL) {
+    if (curproc->p_threads.size == 0) {
         curproc->p_status = (long) retval;
         proc_cleanup();
     } else {
@@ -231,14 +231,14 @@ void proc_kill_all() {
     // Remove processes that aren't the idle proc or any of its children, while still maintaining the links to proc_list
     // (without removing links from the proc_list)
     int is_curproc_or_idle_or_its_child = 0;
-    for (list_link_t* link = proc_list.head; link != NULL, link = link.next) {
+    for (list_link_t* link = proc_list.head; link != NULL; link = link->next) {
         proc_t *proc = (proc_t *) link->parent;
 
-        if (proc == &idle_proc || proc == curproc) {
+        if (proc == &idleproc || proc == curproc) {
             is_curproc_or_idle_or_its_child = 1;
         } else {
 
-            for (list_link_t* idle_link = idle_proc.p_children.head; idle_link != NULL, idle_link = idle_link.next) {
+            for (list_link_t* idle_link = idleproc.p_children.head; idle_link != NULL; idle_link = idle_link->next) {
                 proc_t *idle_proc_child = (proc_t *) idle_link->parent;
                 if (link == idle_link) {
                     is_curproc_or_idle_or_its_child = 1;

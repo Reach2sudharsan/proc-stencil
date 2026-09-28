@@ -3,7 +3,7 @@
 kthread_t *curthr;
 
 /*
- * TODO: implement me!
+ * 
  * Hints: we don't have any threads running yet... but what from the thread
  * subsystem needs ot be initialized?
  */
@@ -15,7 +15,7 @@ void kthread_init() {
 
 
 /*
- * TODO: implement me!
+ * 
  * Hints:
  *   - make space for the new thread using the kthread allocator
  *   - set default values for thread fields
@@ -70,7 +70,7 @@ kthread_t *kthread_create(proc_t *proc, kthread_func_t func, long arg1,
 }
 
 /*
- * TODO: implement me!
+ * 
  * Hints:
  *   - the only parts of the context that must be initialized are c_kstack and
  *     c_kstacksz
@@ -117,7 +117,7 @@ kthread_t *kthread_clone(kthread_t *thread) {
 }
 
 /*
- * TODO: implement me!
+ * 
  * Hints:
  *   - deallocate thread memory
  *   - remove thread from process' thread list
@@ -140,7 +140,7 @@ void kthread_destroy(kthread_t *thread) {
 }
 
 /*
- * TODO: implement me!
+ * 
  * Hints:
  *   - cannot "cancel" the current thread, so call exit
  *   - mark the thread as cancelled and stop executing
@@ -151,18 +151,19 @@ void kthread_cancel(kthread_t *thread, void *retval) {
     if(thread == NULL){
         return;
     }
+
+    if(thread == curthr){
+        kthread_exit(curthr);
+    }
     
     //Set retval, cancelled and state
     thread->kt_retval = retval;
     thread->kt_cancelled = 1;
     thread->kt_state = KT_NO_STATE;
-
-    //Notify parent process
-    proc_thread_exiting(retval);
 }
 
 /*
- * TODO: implement me!
+ * 
  * Hints: there's (some but) not much to do here... remember, it's up to the
  * parent process to manage its threads!
  */
@@ -172,9 +173,8 @@ void kthread_exit(void *retval) {
         return;
     }
 
-    //Set retval, cancelled and state
+    //Set retval and state
     curthr->kt_retval = retval;
-    curthr->kt_cancelled = 1;
     curthr->kt_state = KT_EXITED;
 
     //Notify parent process

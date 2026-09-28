@@ -2,6 +2,9 @@
 #include "proc.h"
 #include "sched.h"
 
+#include <stdio.h>
+#include <assert.h>
+
 const int NUM_INITS = 6;
 
 typedef void (*init_func_t)();
@@ -43,11 +46,14 @@ int main(int argc, char **argv) {
     if (bootstrap_stack == NULL) {
         return -1;
     }
-
+    printf("ALL is fine so far...\n");
     context_setup(&bootstrap_ctx, start_initproc, 0, NULL, bootstrap_stack, PAGE_SIZE, NULL);
     context_switch(&bios_ctx, &bootstrap_ctx); // saves this as the place where bios ctx will restore
-
+ 
     // TODO: what do you expect when you get here? Add test cases here!
-
+    assert(curproc == proc_initproc);
+    assert(curthr->kt_state==KT_EXITED);
+    
+    printf("ALL is fine indeed\n");
     return 0;
 }
