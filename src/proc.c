@@ -171,19 +171,14 @@ void proc_cleanup() {
  * Hints: how should a process behave if all threads exit?
  */
 void proc_thread_exiting(void *retval) {
-
-    // Assuming curthr exists but its resources just needs to be deallocated
-    spinlock_lock(&curproc->p_threads_lock);
-    list_remove_link(&curproc->p_threads, &curthr->kt_plink);
-    spinlock_unlock(&curproc->p_threads_lock);
-
+    context_t old_context = curthr->kt_ctx;
+    kthread_destroy(&curthr);
     // if there are no more threads for the process, terminate the process, else go to the next thread
     if (curproc->p_threads.size == 0) {
         curproc->p_status = (long) retval;
         proc_cleanup();
-    } else {
-        sched_switch();
     }
+    sched_switch(old_context);
 }
 
 /*

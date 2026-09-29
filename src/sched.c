@@ -8,17 +8,17 @@ void sched_init() {
     spinlock_init(&kt_runq.tq_lock);
 }
 
-void sched_switch() {
+void sched_switch(context_t old_context) {
     // get the next thread
     spinlock_lock(&kt_runq.tq_lock);
     if (kt_runq.tq_list.size == 0) {
         return; // uh oh! nobody else to run... just exit
     }
 
-    context_t *old_ctx;
+    //context_t *old_ctx;
     kthread_t *next_thread;
     while (1) {
-        old_ctx = &curthr->kt_ctx;
+        //old_ctx = &curthr->kt_ctx;
         next_thread = (kthread_t *) list_remove_front(&kt_runq.tq_list)->parent;
 
         // if next_thread is cancelled, don't run it...
@@ -48,5 +48,5 @@ void sched_switch() {
 
     // no need to save the current thread, we assume it's run its course!
     // context switch to the next thread
-    context_switch(old_ctx, &curthr->kt_ctx);
+    context_switch(&old_context, &curthr->kt_ctx);
 }

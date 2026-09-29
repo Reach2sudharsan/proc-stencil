@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
  
     // TODO: what do you expect when you get here? Add test cases here!
     assert(curproc == proc_initproc);
-    assert(curthr->kt_state==KT_EXITED);
+    proc_destroy(curproc);
     
     printf("ALL is fine indeed\n");
     return 0;

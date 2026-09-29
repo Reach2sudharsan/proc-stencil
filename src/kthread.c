@@ -130,7 +130,10 @@ void kthread_destroy(kthread_t *thread) {
     if(thread == NULL){
         return;
     }
-    list_remove_link(&((thread->kt_proc)->p_threads), &(thread->kt_plink)); 
+
+    spinlock_lock(&curproc->p_threads_lock);
+    list_remove_link(&curproc->p_threads, &curthr->kt_plink);
+    spinlock_unlock(&curproc->p_threads_lock); 
 
     //free stack
     slab_obj_free(kthread_allocator, &(thread->kt_kstack));

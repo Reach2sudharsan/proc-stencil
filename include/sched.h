@@ -3,6 +3,7 @@
 
 #include "util/list.h"
 #include "util/spinlock.h"
+#include "include/context.h"
 
 /**************
  * Structures *
@@ -29,6 +30,6 @@ void sched_init(void);
 /*
  * Switch the current thread to a
  */
-void sched_switch(void);
+void sched_switch(context_t old_context);
 
 #endif // __SCHED_H__
