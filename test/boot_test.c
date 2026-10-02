@@ -52,7 +52,13 @@ int main(int argc, char **argv) {
  
     // TODO: what do you expect when you get here? Add test cases here!
     assert(curproc == proc_initproc);
-    proc_destroy(curproc);
+    assert(proc_initproc != NULL);
+    assert(proc_initproc->p_pproc == &idleproc);
+    assert(proc_initproc->p_state == PROC_DEAD);
+    assert(proc_initproc->p_status == 0);
+    assert(proc_initproc->p_threads.size == 0);
+    assert(proc_list.size == 1);
+    assert(idleproc.p_children.size == 1);
     
     printf("ALL is fine indeed\n");
     return 0;
